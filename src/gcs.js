@@ -68,21 +68,15 @@ function Upload(size, contentType) {
   const self = this;
   this.state = {
     _progress: 0,
-    _pending: size,
     _error: null,
     _done: false,
     _cancel: false,
-    set progress(sent) {
-      if (!sent) {
+    set progress(offset) {
+      if (!offset) {
         return;
       }
 
-      this._pending -= sent;
-
-      const progress = {
-        sent: sent,
-        pending: this._pending
-      };
+      const progress = offset;
 
       if (!self._onprogress) {
         self.eventQueue.onprogress.push(progress);
@@ -100,19 +94,19 @@ function Upload(size, contentType) {
       this._error = error;
       self._onerror(error);
     },
-    set done(metadata) {
-      if (!metadata) {
+    set done(done) {
+      if (!done) {
         return;
       }
 
       this._done = true;
 
       if (!self._ondone) {
-        self.eventQueue.ondone[0] = metadata;
+        self.eventQueue.ondone[0] = true;
         return;
       }
 
-      self._ondone(metadata);
+      self._ondone();
     },
     set cancel(cancel) {
       if (!cancel) {
@@ -164,11 +158,9 @@ Upload.prototype = (function() {
 
     /**
      * Sets the upload as done. Triggers the .ondone callback.
-     *
-     * @param {object} info - metadata about the uploaded file.
      */
-    done(info) {
-      this.state.done = info;
+    done() {
+      this.state.done = true;
     },
 
     /**
@@ -282,7 +274,7 @@ const uploadChunk = (sessionUri, chunk, contentType, range) => {
   return fetch(sessionUri, options).then(response => {
     if (response.status === 200 || response.status == 201) {
       // Upload completed!
-      return response.json();
+      return { done: true };
     }
 
     if (response.status === 308) {
@@ -314,8 +306,8 @@ const doUpload = (upload, sessionUri, steamer, offset) => {
       return;
     }
 
-    if (response.selfLink) {
-      return upload.done(response);
+    if (response.done) {
+      return upload.done();
     }
 
     if (response.offset) {
