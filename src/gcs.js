@@ -248,7 +248,7 @@ const getSessionUri = filename => {
     },
     mode: 'cors',
     body: JSON.stringify({
-      file: filename
+      bucketFile: filename
     })
   }).then(response => {
     if (response.status !== 201 && response.status !== 200) {
