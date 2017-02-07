@@ -24,7 +24,12 @@ upload.ondone: function(info) {
 upload.oncancel: function() {...};
 upload.onerror: function(error) {
   console.error(error);
-}
+};
+upload.onpause: function() {
+  console.log('Pause');
+  upload.resume();
+};
 
 // upload.cancel();
+// upload.pause();
 ```

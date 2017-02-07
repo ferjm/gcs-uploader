@@ -1,5 +1,9 @@
 window.addEventListener('DOMContentLoaded', function() {
-  function upload() {
+  const cancel = document.getElementById('cancel');
+  const pause = document.getElementById('pause');
+  const resume = document.getElementById('resume');
+
+  function doUpload() {
     const files = document.getElementById('files').files;
     if (!files.length) {
       return alert('Select a file, please');
@@ -12,6 +16,9 @@ window.addEventListener('DOMContentLoaded', function() {
     const upload = gcsUploader.run(file);
     upload.onprogress = function(progress) {
       progressDiv.style.display = 'block';
+      cancel.style.display = 'inline';
+      pause.style.display = 'inline';
+      resume.style.display = 'none';
       doneDiv.style.display = 'none';
       console.log('Progress ', progress);
       sent.textContent = progress;
@@ -21,18 +28,33 @@ window.addEventListener('DOMContentLoaded', function() {
     };
     upload.ondone = function() {
       progressDiv.style.display = 'none';
+      cancel.style.display = 'none';
+      pause.style.display = 'none';
       doneDiv.style.display = 'block';
       console.log('Done');
     };
     upload.oncancel = function() {
       progressDiv.style.display = 'none';
+      cancel.style.display = 'none';
+      pause.style.display = 'none';
+      resume.style.display = 'none';
       doneDiv.style.display = 'none';
       console.log('Cancel');
     };
+    upload.onpause = function() {
+      pause.style.display = 'none';
+      resume.style.display = 'inline';
+    };
     const total = document.getElementById('total');
     total.textContent = upload.size;
-    document.getElementById('cancel').addEventListener('click', upload.cancel.bind(upload));
+
+    return upload;
   }
 
-  document.getElementById('upload').addEventListener('click', upload);
+  document.getElementById('upload').addEventListener('click', function() {
+    const upload = doUpload();
+    cancel.addEventListener('click', upload.cancel.bind(upload));
+    pause.addEventListener('click', upload.pause.bind(upload));
+    resume.addEventListener('click', upload.resume.bind(upload));
+  });
 });

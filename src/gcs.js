@@ -19,11 +19,14 @@
  *   console.log('File uploaded. Metadata', info);
  * };
  * upload.oncancel: function() {...};
+ * upload.onpause: function() {...};
  * upload.onerror: function(error) {
  *   console.error(error);
  * }
  *
  * // upload.cancel();
+ * // upload.pause();
+ * // upload.resume();
  * ```
  */
 
@@ -31,11 +34,14 @@
 
 import Steamer from './steamer.js';
 
+const RESUME_OFFSET = '*';
+
 /**
  * Upload states.
  */
 const DONE = 'done';
 const INPROGRESS = 'inprogress';
+const PAUSE = 'pause';
 const CANCEL = 'cancel';
 
 const clearEventQueue = (eventQueue, event) => {
@@ -48,10 +54,10 @@ const clearEventQueue = (eventQueue, event) => {
  * Helper class to keep state information about a file upload.
  *
  * Every state update causes the trigger of an event related to the
- * state change. For example, updating `upload.progress` via triggers
+ * state change. For example, updating `upload.progress` triggers
  * the `onprogress` callback.
  */
-function Upload(size, contentType) {
+function Upload(size, contentType, steamer) {
   // We need to queue events triggered before the callbacks are set.
   // Once a callback is set, we check the corresponding event queue
   // and fire its events.
@@ -59,11 +65,14 @@ function Upload(size, contentType) {
     onprogress: [],
     onerror: [],
     ondone: [],
-    oncancel: []
+    oncancel: [],
+    onpause: []
   };
 
   this.size = size;
   this.contentType = contentType;
+  this.steamer = steamer;
+  this.sessionUri = null;
 
   const self = this;
   this.state = {
@@ -71,8 +80,9 @@ function Upload(size, contentType) {
     _error: null,
     _done: false,
     _cancel: false,
+    _pause: false,
     set progress(offset) {
-      if (!offset) {
+      if (!offset || offset === RESUME_OFFSET) {
         return;
       }
 
@@ -121,6 +131,22 @@ function Upload(size, contentType) {
       }
 
       self._oncancel();
+    },
+    set pause(pause) {
+      this._pause = pause;
+
+      if (!self._onpause) {
+        self.eventQueue.onpause[0] = pause;
+        return;
+      }
+
+      if (!pause) {
+        return;
+      }
+
+      // We only trigger the onpause event when we go from
+      // inprogress to pause state.
+      self._onpause();
     }
   };
 }
@@ -164,8 +190,24 @@ Upload.prototype = (function() {
     },
 
     /**
+     * Pauses the upload. Triggers the .onpause callback.
+     */
+    pause() {
+      this.state.pause = true;
+    },
+
+    /**
+     * Resumes a paused upload.
+     */
+    resume() {
+      this.state.pause = false;
+      doUpload(this, RESUME_OFFSET);
+    },
+
+    /**
      * Current state getter. An upload can have three states:
      * - INPROGRESS
+     * - PAUSE
      * - CANCEL
      * - DONE
      */
@@ -176,6 +218,10 @@ Upload.prototype = (function() {
 
       if (this.state._cancel) {
         return CANCEL;
+      }
+
+      if (this.state._pause) {
+        return PAUSE;
       }
 
       return INPROGRESS;
@@ -219,6 +265,16 @@ Upload.prototype = (function() {
     set oncancel(cb) {
       this._oncancel = cb;
       clearEventQueue(this.eventQueue.oncancel, cb);
+    },
+
+    /**
+     * onpause callback setter.
+     *
+     * @param {function} cb - callback.
+     */
+    set onpause(cb) {
+      this._onpause = cb;
+      clearEventQueue(this.eventQueue.onpause, cb);
     }
   };
 })();
@@ -289,18 +345,19 @@ const uploadChunk = (sessionUri, chunk, contentType, range) => {
 
     // Something went wrong, the service is unavailable, so we need to stop
     // for a bit and try to resume our upload.
-    return { offset: '*' };
+    return { offset: RESUME_OFFSET };
   });
 };
 
-const doUpload = (upload, sessionUri, steamer, offset) => {
-  steamer.next(offset).then(chunk => {
+const doUpload = (upload, offset) => {
+  upload.steamer.next(offset).then(chunk => {
     let range =
-      offset ? offset === '*' ? `bytes *`
-                              : `bytes ${offset}-${offset + chunk.size -1}`
+      offset ? offset === RESUME_OFFSET
+                ? `bytes *`
+                : `bytes ${offset}-${offset + chunk.size -1}`
              : `bytes 0-${chunk.size - 1}`;
     range = `${range}/${upload.size}`;
-    return uploadChunk(sessionUri, chunk, upload.contentType, range);
+    return uploadChunk(upload.sessionUri, chunk, upload.contentType, range);
   }).then(response => {
     if (upload.currentState !== INPROGRESS) {
       return;
@@ -312,14 +369,14 @@ const doUpload = (upload, sessionUri, steamer, offset) => {
 
     if (response.offset) {
       upload.progress = offset;
-      return doUpload(upload, sessionUri, steamer, response.offset);
+      return doUpload(upload, response.offset);
     }
 
     throw new Error('Unexpected response');
   }).catch(error => {
     upload.error = error;
     if (upload.currentState === INPROGRESS) {
-      doUpload(upload, sessionUri, steamer, '*');
+      doUpload(upload, RESUME_OFFSET);
     }
   });
 };
@@ -339,12 +396,12 @@ const run = (file) => {
   }
 
   // Create a new upload instance.
-  const upload = new Upload(file.size, file.type);
+  const upload = new Upload(file.size, file.type, new Steamer(file));
 
   // Get a session URI from Google Cloud Storage.
   getSessionUri(file.name).then(sessionUri => {
-    const steamer = new Steamer(file);
-    doUpload(upload, sessionUri, steamer);
+    upload.sessionUri = sessionUri;
+    doUpload(upload);
   }).catch(error => {
     upload.error = error;
   });

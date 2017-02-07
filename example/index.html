@@ -7,9 +7,11 @@
     <script src="index.js"></script>
   </head>
   <body>
-    <input type="file" id="files" name="file" />
+    <input type="file" id="files" name="file"/>
     <button id="upload">Upload</button>
-    <button id="cancel">Cancel</button>
+    <button id="cancel" style="display:none;">Cancel</button>
+    <button id="pause" style="display:none;">Pause</button>
+    <button id="resume" style="display:none;">Resume</button>
     <p id="progress" style="display:none;">
       Progress <span id="sent">0</span> of <span id="total">0</span>
     </p>
